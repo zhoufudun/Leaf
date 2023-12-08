@@ -3,9 +3,9 @@ package com.sankuai.inf.leaf.segment.model;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class Segment {
-    private AtomicLong value = new AtomicLong(0);
-    private volatile long max;
-    private volatile int step;
+    private AtomicLong value = new AtomicLong(0); // 当前id， 2001
+    private volatile long max; // 最大id， 4001
+    private volatile int step; // 步幅， 2000
     private SegmentBuffer buffer;
 
     public Segment(SegmentBuffer buffer) {

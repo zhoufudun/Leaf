@@ -8,11 +8,12 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
  * 双buffer
+ * 一个业务tag对于一个SegmentBuffer
  */
 public class SegmentBuffer {
     private String key;
     private Segment[] segments; //双buffer
-    private volatile int currentPos; //当前的使用的segment的index
+    private volatile int currentPos; //当前的使用的segment的index，只有0和1
     private volatile boolean nextReady; //下一个segment是否处于可切换状态
     private volatile boolean initOk; //是否初始化完成
     private final AtomicBoolean threadRunning; //线程是否在运行中
@@ -23,6 +24,7 @@ public class SegmentBuffer {
     private volatile long updateTimestamp;
 
     public SegmentBuffer() {
+        // 双buffer
         segments = new Segment[]{new Segment(this), new Segment(this)};
         currentPos = 0;
         nextReady = false;
@@ -39,11 +41,11 @@ public class SegmentBuffer {
         this.key = key;
     }
 
-    public Segment[] getSegments() {
+    public Segment[] getAllSegments() {
         return segments;
     }
 
-    public Segment getCurrent() {
+    public Segment getCurrentSegment() {
         return segments[currentPos];
     }
 

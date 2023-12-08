@@ -33,6 +33,7 @@ public class SegmentService {
             dataSource.setUrl(properties.getProperty(Constants.LEAF_JDBC_URL));
             dataSource.setUsername(properties.getProperty(Constants.LEAF_JDBC_USERNAME));
             dataSource.setPassword(properties.getProperty(Constants.LEAF_JDBC_PASSWORD));
+            dataSource.setDriverClassName("com.mysql.cj.jdbc.Driver"); // mysql8
             dataSource.init();
 
             // Config Dao

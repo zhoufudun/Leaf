@@ -96,16 +96,16 @@ public class SegmentIDGenImpl implements IDGen {
             Set<String> insertTagsSet = new HashSet<>(dbTags);
             Set<String> removeTagsSet = new HashSet<>(cacheTags);
             //db中新加的tags灌进cache
-            for(int i = 0; i < cacheTags.size(); i++){
+            for (int i = 0; i < cacheTags.size(); i++) {
                 String tmp = cacheTags.get(i);
-                if(insertTagsSet.contains(tmp)){
+                if (insertTagsSet.contains(tmp)) {
                     insertTagsSet.remove(tmp);
                 }
             }
             for (String tag : insertTagsSet) {
                 SegmentBuffer buffer = new SegmentBuffer();
                 buffer.setKey(tag);
-                Segment segment = buffer.getCurrent();
+                Segment segment = buffer.getCurrentSegment();
                 segment.setValue(new AtomicLong(0));
                 segment.setMax(0);
                 segment.setStep(0);
@@ -113,9 +113,9 @@ public class SegmentIDGenImpl implements IDGen {
                 logger.info("Add tag {} from db to IdCache, SegmentBuffer {}", tag, buffer);
             }
             //cache中已失效的tags从cache删除
-            for(int i = 0; i < dbTags.size(); i++){
+            for (int i = 0; i < dbTags.size(); i++) {
                 String tmp = dbTags.get(i);
-                if(removeTagsSet.contains(tmp)){
+                if (removeTagsSet.contains(tmp)) {
                     removeTagsSet.remove(tmp);
                 }
             }
@@ -141,11 +141,11 @@ public class SegmentIDGenImpl implements IDGen {
                 synchronized (buffer) {
                     if (!buffer.isInitOk()) {
                         try {
-                            updateSegmentFromDb(key, buffer.getCurrent());
-                            logger.info("Init buffer. Update leafkey {} {} from db", key, buffer.getCurrent());
+                            updateSegmentFromDb(key, buffer.getCurrentSegment());
+                            logger.info("Init buffer. Update leafkey {} {} from db", key, buffer.getCurrentSegment());
                             buffer.setInitOk(true);
                         } catch (Exception e) {
-                            logger.warn("Init buffer {} exception", buffer.getCurrent(), e);
+                            logger.warn("Init buffer {} exception", buffer.getCurrentSegment(), e);
                         }
                     }
                 }
@@ -169,20 +169,24 @@ public class SegmentIDGenImpl implements IDGen {
             buffer.setStep(leafAlloc.getStep());
             buffer.setMinStep(leafAlloc.getStep());//leafAlloc中的step为DB中的step
         } else {
-            long duration = System.currentTimeMillis() - buffer.getUpdateTimestamp();
+            long duration = System.currentTimeMillis() - buffer.getUpdateTimestamp(); // 获取当前buffer距离上次更新过去了多久
             int nextStep = buffer.getStep();
-            if (duration < SEGMENT_DURATION) {
-                if (nextStep * 2 > MAX_STEP) {
+
+            // 动态调整下一个segment的step大小
+            if (duration < SEGMENT_DURATION) {  // 过去的时间 < 15min
+                if (nextStep * 2 > MAX_STEP) {  // 超过最大步幅 0.5 倍数
                     //do nothing
                 } else {
-                    nextStep = nextStep * 2;
+                    nextStep = nextStep * 2; // 未超过最大步幅 2 倍数，下一个segment的步幅扩大2倍数
                 }
-            } else if (duration < SEGMENT_DURATION * 2) {
+            } else if (duration < SEGMENT_DURATION * 2) {  // SEGMENT_DURATION * 2 >  duration  > SEGMENT_DURATION
                 //do nothing with nextStep
             } else {
+                // >= SEGMENT_DURATION * 2  说明步幅太大了，在30min之内都用不完，现在需要调小下一个segment的step大小
                 nextStep = nextStep / 2 >= buffer.getMinStep() ? nextStep / 2 : nextStep;
             }
-            logger.info("leafKey[{}], step[{}], duration[{}mins], nextStep[{}]", key, buffer.getStep(), String.format("%.2f",((double)duration / (1000 * 60))), nextStep);
+
+            logger.info("leafKey[{}], step[{}], duration[{}mins], nextStep[{}]", key, buffer.getStep(), String.format("%.2f", ((double) duration / (1000 * 60))), nextStep);
             LeafAlloc temp = new LeafAlloc();
             temp.setKey(key);
             temp.setStep(nextStep);
@@ -199,16 +203,19 @@ public class SegmentIDGenImpl implements IDGen {
         sw.stop("updateSegmentFromDb", key + " " + segment);
     }
 
+    // SegmentBuffer从中获取一个id
     public Result getIdFromSegmentBuffer(final SegmentBuffer buffer) {
         while (true) {
             buffer.rLock().lock();
             try {
-                final Segment segment = buffer.getCurrent();
+                final Segment segment = buffer.getCurrentSegment();
+                // 下一个buffer还没准备好，并且当前buffer的余量<0.9 * step, 并且设置更新下一个buffer的线程开始运行成功【可能有多线程竞争】
                 if (!buffer.isNextReady() && (segment.getIdle() < 0.9 * segment.getStep()) && buffer.getThreadRunning().compareAndSet(false, true)) {
+                    // 准备下一个buffer
                     service.execute(new Runnable() {
                         @Override
                         public void run() {
-                            Segment next = buffer.getSegments()[buffer.nextPos()];
+                            Segment next = buffer.getAllSegments()[buffer.nextPos()]; // 获取下一个Segment
                             boolean updateOk = false;
                             try {
                                 updateSegmentFromDb(buffer.getKey(), next);
@@ -220,33 +227,44 @@ public class SegmentIDGenImpl implements IDGen {
                                 if (updateOk) {
                                     buffer.wLock().lock();
                                     buffer.setNextReady(true);
-                                    buffer.getThreadRunning().set(false);
+                                    buffer.getThreadRunning().set(false); // 更新完毕后，线程设置停止
                                     buffer.wLock().unlock();
                                 } else {
-                                    buffer.getThreadRunning().set(false);
+                                    buffer.getThreadRunning().set(false); // 更新失败后，线程设置停止
                                 }
                             }
                         }
                     });
                 }
                 long value = segment.getValue().getAndIncrement();
-                if (value < segment.getMax()) {
+                if (value < segment.getMax()) { // 当前id < 当前分配的短号内最大id，返回成功
                     return new Result(value, Status.SUCCESS);
                 }
             } finally {
                 buffer.rLock().unlock();
             }
+            // 到这里说明当前的segment里可用的id已经最大了没有了可用的了
+            // 等待更新下一个segment的线程执行完毕
             waitAndSleep(buffer);
             buffer.wLock().lock();
             try {
-                final Segment segment = buffer.getCurrent();
+                /**
+                 * 这里是不是多余了？？不多于
+                 * 理由：能走到这里的就说明当前的segment的id用完了，没用完在之前的代码就返回了不是吗？
+                 * 不多余：
+                 * 1、假设3个线程执行到waitAndSleep(buffer); 最大步幅step=2
+                 * 2、第一个线程获得写锁后，发现当前segment没有可用，会执行buffer.switchPos();
+                 * 3、第二个线程获得写锁后，会执行buffer.getCurrentSegment()发现又有可用的了，因为第一个线程执行 buffer.switchPos()，已经把segment变化为下一个了。
+                 * 4、第3个线程获得写锁后，会执行buffer.getCurrentSegment()发现又有可用的了。
+                 */
+                final Segment segment = buffer.getCurrentSegment(); // 下一个segment更新完毕后，这里先判断当前的segment是否还有可用的id
                 long value = segment.getValue().getAndIncrement();
                 if (value < segment.getMax()) {
-                    return new Result(value, Status.SUCCESS);
+                    return new Result(value, Status.SUCCESS); // 当前的segment是否还有可用的id，返回
                 }
-                if (buffer.isNextReady()) {
-                    buffer.switchPos();
-                    buffer.setNextReady(false);
+                if (buffer.isNextReady()) { // 当前的segment是否没有可用的id，那就判断以下一个segment是否已经提前准备好了
+                    buffer.switchPos(); // 调整两个segment的位置
+                    buffer.setNextReady(false); // 并且下一个segment设置为不可用
                 } else {
                     logger.error("Both two segments in {} are not ready!", buffer);
                     return new Result(EXCEPTION_ID_TWO_SEGMENTS_ARE_NULL, Status.EXCEPTION);
@@ -257,16 +275,21 @@ public class SegmentIDGenImpl implements IDGen {
         }
     }
 
+    /**
+     * 等待更新下一个segment的线程执行完毕
+     * 最大等待时间=100s
+     * @param buffer
+     */
     private void waitAndSleep(SegmentBuffer buffer) {
         int roll = 0;
         while (buffer.getThreadRunning().get()) {
             roll += 1;
-            if(roll > 10000) {
+            if (roll > 10000) {
                 try {
                     TimeUnit.MILLISECONDS.sleep(10);
                     break;
                 } catch (InterruptedException e) {
-                    logger.warn("Thread {} Interrupted",Thread.currentThread().getName());
+                    logger.warn("Thread {} Interrupted", Thread.currentThread().getName());
                     break;
                 }
             }
