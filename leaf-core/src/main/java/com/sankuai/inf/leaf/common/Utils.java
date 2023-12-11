@@ -17,7 +17,7 @@ public class Utils {
     public static String getIp() {
         String ip;
         try {
-            List<String> ipList = getHostAddress(null);
+            List<String> ipList = getHostAddress(null); // [10.2.40.18, 192.168.122.1, 192.168.140.1]
             // default the first
             ip = (!ipList.isEmpty()) ? ipList.get(0) : "";
         } catch (Exception ex) {
@@ -55,14 +55,14 @@ public class Utils {
             while (allAddress.hasMoreElements()) {
                 InetAddress address = allAddress.nextElement();
                 if (address.isLoopbackAddress()) {
-                    // skip the loopback addr
+                    // skip the loopback addr： 127.0.0.1
                     continue;
                 }
-                if (address instanceof Inet6Address) {
+                if (address instanceof Inet6Address) { // /fe80:0:0:0:e881:1b4:4af0:b9ee%eth0
                     // skip the IPv6 addr
                     continue;
                 }
-                String hostAddress = address.getHostAddress();
+                String hostAddress = address.getHostAddress(); // /10.2.40.18
                 if (null == interfaceName) {
                     ipList.add(hostAddress);
                 } else if (interfaceName.equals(ni.getDisplayName())) {

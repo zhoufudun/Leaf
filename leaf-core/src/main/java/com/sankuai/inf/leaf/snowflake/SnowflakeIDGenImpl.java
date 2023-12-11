@@ -19,13 +19,15 @@ public class SnowflakeIDGenImpl implements IDGen {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(SnowflakeIDGenImpl.class);
 
-    private final long twepoch;
-    private final long workerIdBits = 10L;
-    private final long maxWorkerId = ~(-1L << workerIdBits);//最大能够分配的workerid =1023
-    private final long sequenceBits = 12L;
+    // 雪花分段
+    // 1（固定=0）+41（时间戳ms，最大69年）+10（5[机房id]+5[机器id]）+12（序列号[最大4095]）
+    private final long twepoch;// 41bit的时间戳（单位ms）
+    private final long workerIdBits = 10L; // 10bit的机器id
+    private final long maxWorkerId = ~(-1L << workerIdBits);//最大能够分配的workerid =1023 (2^10-1)
+    private final long sequenceBits = 12L; // 12比特的序列号
     private final long workerIdShift = sequenceBits;
     private final long timestampLeftShift = sequenceBits + workerIdBits;
-    private final long sequenceMask = ~(-1L << sequenceBits);
+    private final long sequenceMask = ~(-1L << sequenceBits);// 最大序列号4095
     private long workerId;
     private long sequence = 0L;
     private long lastTimestamp = -1L;

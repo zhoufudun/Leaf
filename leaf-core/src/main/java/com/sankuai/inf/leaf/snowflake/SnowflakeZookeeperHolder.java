@@ -32,6 +32,7 @@ public class SnowflakeZookeeperHolder {
     private String listenAddress = null;//保存自身的key ip:port
     private int workerID;
     private static final String PREFIX_ZK_PATH = "/snowflake/" + PropertyFactory.getProperties().getProperty("leaf.name");
+    // C:\Users\Administrator\AppData\Local\Temp\\com.sankuai.leaf.opensource.test/leafconf/{port}/workerID.properties
     private static final String PROP_PATH = System.getProperty("java.io.tmpdir") + File.separator + PropertyFactory.getProperties().getProperty("leaf.name") + "/leafconf/{port}/workerID.properties";
     private static final String PATH_FOREVER = PREFIX_ZK_PATH + "/forever";//保存所有数据持久的节点
     private String ip;
@@ -40,10 +41,10 @@ public class SnowflakeZookeeperHolder {
     private long lastUpdateTime;
 
     public SnowflakeZookeeperHolder(String ip, String port, String connectionString) {
-        this.ip = ip;
-        this.port = port;
-        this.listenAddress = ip + ":" + port;
-        this.connectionString = connectionString;
+        this.ip = ip; // 10.2.40.18
+        this.port = port; // 9987
+        this.listenAddress = ip + ":" + port; // 127.0.0.1:2181
+        this.connectionString = connectionString; // 127.0.0.1:2181
     }
 
     public boolean init() {
@@ -53,17 +54,17 @@ public class SnowflakeZookeeperHolder {
             Stat stat = curator.checkExists().forPath(PATH_FOREVER);
             if (stat == null) {
                 //不存在根节点,机器第一次启动,创建/snowflake/ip:port-000000000,并上传数据
-                zk_AddressNode = createNode(curator);
+                zk_AddressNode = createNode(curator); // /snowflake/com.sankuai.leaf.opensource.test/forever/10.2.40.18:9987-0000000000
                 //worker id 默认是0
                 updateLocalWorkerID(workerID);
                 //定时上报本机时间给forever节点
                 ScheduledUploadData(curator, zk_AddressNode);
                 return true;
             } else {
-                Map<String, Integer> nodeMap = Maps.newHashMap();//ip:port->00001
-                Map<String, String> realNode = Maps.newHashMap();//ip:port->(ipport-000001)
+                Map<String, Integer> nodeMap = Maps.newHashMap();//ip:port->00001(workId)
+                Map<String, String> realNode = Maps.newHashMap();//ip:port->(ip:port-000001)
                 //存在根节点,先检查是否有属于自己的根节点
-                List<String> keys = curator.getChildren().forPath(PATH_FOREVER);
+                List<String> keys = curator.getChildren().forPath(PATH_FOREVER); // 10.2.40.18:9987-0000000000
                 for (String key : keys) {
                     String[] nodeKey = key.split("-");
                     realNode.put(nodeKey[0], key);
@@ -72,7 +73,7 @@ public class SnowflakeZookeeperHolder {
                 Integer workerid = nodeMap.get(listenAddress);
                 if (workerid != null) {
                     //有自己的节点,zk_AddressNode=ip:port
-                    zk_AddressNode = PATH_FOREVER + "/" + realNode.get(listenAddress);
+                    zk_AddressNode = PATH_FOREVER + "/" + realNode.get(listenAddress); // /snowflake/com.sankuai.leaf.opensource.test/forever/10.2.40.18:9987-0000000000
                     workerID = workerid;//启动worder时使用会使用
                     if (!checkInitTimeStamp(curator, zk_AddressNode)) {
                         throw new CheckLastTimeException("init timestamp check error,forever node timestamp gt this node time");
@@ -92,7 +93,7 @@ public class SnowflakeZookeeperHolder {
                     LOGGER.info("[New NODE]can not find node on forever node that endpoint ip-{} port-{} workid-{},create own node on forever node and start SUCCESS ", ip, port, workerID);
                 }
             }
-        } catch (Exception e) {
+        } catch (Exception e) { // zk挂了, 机器刚好启动
             LOGGER.error("Start node ERROR {}", e);
             try {
                 Properties properties = new Properties();
@@ -151,7 +152,7 @@ public class SnowflakeZookeeperHolder {
         }
     }
 
-    private void updateNewData(CuratorFramework curator, String path) {
+    private void updateNewData(CuratorFramework curator, String path) { // path=/snowflake/com.sankuai.leaf.opensource.test/forever/10.2.40.18:9987-0000000000
         try {
             if (System.currentTimeMillis() < lastUpdateTime) {
                 return;
@@ -172,13 +173,13 @@ public class SnowflakeZookeeperHolder {
         Endpoint endpoint = new Endpoint(ip, port, System.currentTimeMillis());
         ObjectMapper mapper = new ObjectMapper();
         String json = mapper.writeValueAsString(endpoint);
-        return json;
+        return json; // {"ip":"10.2.40.18","port":"9987","timestamp":1702296073133}
     }
 
     private Endpoint deBuildData(String json) throws IOException {
         ObjectMapper mapper = new ObjectMapper();
         Endpoint endpoint = mapper.readValue(json, Endpoint.class);
-        return endpoint;
+        return endpoint; // {"ip":"10.2.40.18","port":"9987","timestamp":1702296224726}
     }
 
     /**
@@ -187,7 +188,7 @@ public class SnowflakeZookeeperHolder {
      * @param workerID
      */
     private void updateLocalWorkerID(int workerID) {
-        File leafConfFile = new File(PROP_PATH.replace("{port}", port));
+        File leafConfFile = new File(PROP_PATH.replace("{port}", port)); // C:\Users\Administrator\AppData\Local\Temp\com.sankuai.leaf.opensource.test\leafconf\9987\workerID.properties
         boolean exists = leafConfFile.exists();
         LOGGER.info("file exists status is {}", exists);
         if (exists) {
