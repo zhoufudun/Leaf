@@ -27,7 +27,7 @@ public class SnowflakeIDGenImpl implements IDGen {
     private final long sequenceBits = 12L; // 12比特的序列号
     private final long workerIdShift = sequenceBits;
     private final long timestampLeftShift = sequenceBits + workerIdBits;
-    private final long sequenceMask = ~(-1L << sequenceBits);// 最大序列号4095
+    private final long sequenceMask = ~(-1L << sequenceBits);// 最大序列号4095（12bit）
     private long workerId;
     private long sequence = 0L;
     private long lastTimestamp = -1L;
@@ -64,12 +64,12 @@ public class SnowflakeIDGenImpl implements IDGen {
         long timestamp = timeGen();
         if (timestamp < lastTimestamp) {
             long offset = lastTimestamp - timestamp;
-            if (offset <= 5) {
+            if (offset <= 5) { // 如果发生时钟回拨了，回拨时间<5ms
                 try {
-                    wait(offset << 1);
+                    wait(offset << 1); // 等待时间=offset*2
                     timestamp = timeGen();
                     if (timestamp < lastTimestamp) {
-                        return new Result(-1, Status.EXCEPTION);
+                        return new Result(-1, Status.EXCEPTION); // 等待一段时间还是时间回拨，返回异常
                     }
                 } catch (InterruptedException e) {
                     LOGGER.error("wait interrupted");
@@ -79,23 +79,28 @@ public class SnowflakeIDGenImpl implements IDGen {
                 return new Result(-3, Status.EXCEPTION);
             }
         }
-        if (lastTimestamp == timestamp) {
-            sequence = (sequence + 1) & sequenceMask;
-            if (sequence == 0) {
+        if (lastTimestamp == timestamp) { // 同1ms内，多个请求
+            sequence = (sequence + 1) & sequenceMask; // 序列号+1 和 4095按位与
+            if (sequence == 0) { // sequence+1 > 4095
                 //seq 为0的时候表示是下一毫秒时间开始对seq做随机
                 sequence = RANDOM.nextInt(100);
-                timestamp = tilNextMillis(lastTimestamp);
+                timestamp = tilNextMillis(lastTimestamp); // 等待到下一个模ms
             }
         } else {
-            //如果是新的ms开始
-            sequence = RANDOM.nextInt(100);
+            //如果是新的1ms开始
+            sequence = RANDOM.nextInt(100); // 新的1ms内，sequence初始值使用一个随机数
         }
         lastTimestamp = timestamp;
+        // 1+41+10+12 的到一个id
         long id = ((timestamp - twepoch) << timestampLeftShift) | (workerId << workerIdShift) | sequence;
         return new Result(id, Status.SUCCESS);
 
     }
 
+    /**
+     * 等待到下一ms
+     * @param lastTimestamp
+     */
     protected long tilNextMillis(long lastTimestamp) {
         long timestamp = timeGen();
         while (timestamp <= lastTimestamp) {

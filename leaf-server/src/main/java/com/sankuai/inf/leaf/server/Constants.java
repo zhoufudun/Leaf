@@ -4,6 +4,7 @@ public class Constants {
     public static final String LEAF_SEGMENT_ENABLE = "leaf.segment.enable";
     public static final String LEAF_JDBC_URL = "leaf.jdbc.url";
     public static final String LEAF_JDBC_USERNAME = "leaf.jdbc.username";
+    public static final String LEAF_JDBC_DRIVER_CLASS_NAME = "leaf.jdbc.driverClassName";
     public static final String LEAF_JDBC_PASSWORD = "leaf.jdbc.password";
 
     public static final String LEAF_SNOWFLAKE_ENABLE = "leaf.snowflake.enable";

@@ -27,6 +27,7 @@ public class IDGenServiceTest {
         dataSource.setUrl(properties.getProperty("jdbc.url"));
         dataSource.setUsername(properties.getProperty("jdbc.username"));
         dataSource.setPassword(properties.getProperty("jdbc.password"));
+        dataSource.setDriverClassName(properties.getProperty("jdbc.driverClassName"));
         dataSource.init();
 
         // Config Dao
@@ -39,7 +40,7 @@ public class IDGenServiceTest {
     }
     @Test
     public void testGetId() {
-        for (int i = 0; i < 100; ++i) {
+        for (int i = 0; i < 1000000; ++i) {
             Result r = idGen.get("leaf-segment-test");
             System.out.println(r);
         }
